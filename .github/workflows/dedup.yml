@@ -2,7 +2,7 @@ name: Daily dedup update
 
 on:
   schedule:
-    - cron: '30 20 * * *'  # UTC 20:30 = 北京时间每日 04:30（CCSH 04:00 更新后半小时）
+    - cron: '30 20 * * *'  # UTC 20:30 = 北京时间每日 04:30（上游 04:00 更新后半小时）
   workflow_dispatch: {}    # 支持手动触发
 
 permissions:
@@ -19,20 +19,26 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-      - name: Download latest CCSH live_lite.m3u
+      - name: Download upstream playlists
         run: |
+          curl -fsSL --retry 3 -o bestfan.m3u8 \
+            "https://raw.githubusercontent.com/best-fan/iptv-sources/main/cn_all.m3u8" || true
           curl -fsSL --retry 3 -o live_lite.m3u \
-            "https://raw.githubusercontent.com/CCSH/IPTV/refs/heads/main/live_lite.m3u"
+            "https://raw.githubusercontent.com/CCSH/IPTV/refs/heads/main/live_lite.m3u" || true
 
-      - name: Run dedup (probe resolution, keep >=1080 per channel)
+      - name: Run dedup (merge sources, probe resolution, keep >=1080)
         shell: pwsh
-        run: ./dedup.ps1
+        run: |
+          ./dedup.ps1 -InputFiles @('bestfan.m3u8','live_lite.m3u') `
+                      -TopN 8 -MinChannels 30 `
+                      -OutputFile 'live_lite_dedup.m3u' `
+                      -OutputFileSd 'live_lite_dedup_720p.m3u'
 
       - name: Commit and push if changed
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add live_lite.m3u live_lite_dedup.m3u live_lite_dedup_720p.m3u
+          git add bestfan.m3u8 live_lite.m3u live_lite_dedup.m3u live_lite_dedup_720p.m3u
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "auto: dedup update $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push

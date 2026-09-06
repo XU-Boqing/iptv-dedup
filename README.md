@@ -1,40 +1,41 @@
 # iptv-dedup
 
-[CCSH/IPTV](https://github.com/CCSH/IPTV) `live_lite.m3u` 的**每日自动去重版**。
+多源聚合的**实测探活 + 1080P 优先** IPTV 直播列表，GitHub Actions 每日自动更新。
 
-上游每天更新约 1900+ 条频道条目，但其中大量是同名频道的冗余源（同一个台出现 5~30 次）。本仓库用 GitHub Actions 每天拉取上游最新列表，按"同名频道保留第一个源"策略去重（先剔除重复 URL，再按频道名去重），输出精简列表：
+上游合并 best-fan/iptv-sources 与 CCSH/IPTV 两个每日更新源，频道名归一化合并后，
+用 ffprobe 逐个实测每个候选流的**真实分辨率**，每个频道只保留一个**可播放且 ≥1080P** 的源。
 
-- 上游约 1940 条 → 去重后约 **260+ 个唯一频道**
-- 分组保留：央视频道 / 卫视频道 / 港澳台 / 电影 / 电视剧 / NewTV / 综艺 / 体育 等
-- 保留 `x-tvg-url` EPG 声明，可配合 CCSH 的 `e.xml.gz` 显示节目单
-- 更新时间：北京时间每日 04:30（上游 04:00 更新后半小时）
+## 直链（Kodi / VLC / TiviMate 等直接订阅）
 
-## 直链
+| 文件 | 内容 | 直链 |
+|------|------|------|
+| **live_lite_dedup.m3u**（主推） | 122+ 个频道，全部 ≥1080P | `https://raw.githubusercontent.com/XU-Boqing/iptv-dedup/main/live_lite_dedup.m3u` |
+| live_lite_dedup_720p.m3u（备用） | 38+ 个无 1080 源的频道（720p 等次优） | `https://raw.githubusercontent.com/XU-Boqing/iptv-dedup/main/live_lite_dedup_720p.m3u` |
 
-```
-https://raw.githubusercontent.com/XU-Boqing/iptv-dedup/main/live_lite_dedup.m3u
-```
+## 工作原理
 
-EPG（可选，来自上游 CCSH）：
+1. **拉取上游**（每日 04:30，北京时间）：
+   - [best-fan/iptv-sources](https://github.com/best-fan/iptv-sources) `cn_all.m3u8`（约 200 条，实测存活率 ~67%）
+   - [CCSH/IPTV](https://github.com/CCSH/IPTV) `live_lite.m3u`（约 1900 条，实测存活率 ~24%）
+2. **频道名归一化合并**：`CCTV-1 (720p)`、`CCTV1`、`CCTV-1` 视为同一频道
+3. **实测探活**：每频道取前 8 个候选，ffprobe 硬超时 10s 并发 40 实测真实分辨率
+4. **选源**：分辨率 ≥1080 的最高清源进主文件；无 1080 源的频道进备用文件；全死剔除
+5. **保险丝**：产出 <30 频道视为异常，拒绝提交（保护线上文件不被坏结果覆盖）
 
-```
-https://raw.githubusercontent.com/CCSH/IPTV/refs/heads/main/e.xml.gz
-```
+## 重要说明
 
-## 使用
-
-在 Kodi 的 PVR IPTV Simple Client 中把 M3U URL 换成上面的直链即可。也适用于任何支持 m3u 的播放器（VLC / TiviMate / DIYP 等）。
+- **探活视角**：GitHub Actions 服务器在海外，对中国运营商 CDN 的可达性与国内直连不同。
+  若某频道在你的网络下无法播放，可手动触发 [Actions](../../actions) 重跑，或在本机执行：
+  ```powershell
+  pwsh ./dedup.ps1 -InputFiles @('bestfan.m3u8','live_lite.m3u') -TopN 8 -MinChannels 30
+  ```
+- 上游源随时可能失效，本列表每天 04:30 自动刷新，坏源最长存活 24 小时
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `live_lite.m3u` | 上游原始列表（每日同步） |
-| `live_lite_dedup.m3u` | **去重版（用这个）** |
-| `dedup.ps1` | 去重脚本（PowerShell） |
+| `live_lite_dedup.m3u` | **主输出（用这个）**：全 ≥1080P 频道 |
+| `live_lite_dedup_720p.m3u` | 备用输出：仅 720p 等次优源的频道 |
+| `dedup.ps1` | 去重探活脚本（PowerShell 7+，需 ffprobe） |
 | `.github/workflows/dedup.yml` | 每日自动更新工作流 |
-
-## 已知取舍
-
-- 同名频道只保留第一个源：上游排序把运营商 CDN 等相对稳定的源排在前面，所以保留的通常是较稳的源；但代价是失去"卡了换下一条"的冗余备份
-- 如果某天保留的源失效，第二天 04:30 自动更新会自动换新源
