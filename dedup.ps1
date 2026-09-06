@@ -62,8 +62,9 @@ $probeResults = $allUrls | ForEach-Object -Parallel {
     try {
         $rwus = [int64]$tmo * 1000000
         # rw_timeout 限制单次网络读写等待；analyzeduration/probesize 限制分析耗时
+        # 注意：ffprobe 不支持 GNU 风格 "--" 分隔符，直接跟 URL
         $h = & ffprobe -v error -nostdin -rw_timeout $rwus -analyzeduration 3000000 -probesize 3000000 `
-                -select_streams v:0 -show_entries stream=height -of csv=p=0 -- $u 2>$null
+                -select_streams v:0 -show_entries stream=height -of csv=p=0 $u 2>$null
         $ht = "$h".Trim()
         if ($LASTEXITCODE -eq 0 -and $ht -match '^\d+$') { "HD:$ht" } else { 'DEAD' }
     } catch { 'ERR' }
