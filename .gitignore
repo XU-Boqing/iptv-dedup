@@ -1,0 +1,9 @@
+# 上游缓存（每次运行重新下载，不需要版本化）
+bestfan.m3u8
+live_lite.m3u
+
+# 中间产物
+test-parallel.ps1
+ccsh_*.m3u
+merged_*.m3u
+*.log
